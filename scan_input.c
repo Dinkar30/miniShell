@@ -7,7 +7,21 @@ void scan_input(char* prompt,char *input_string){
     int ret_status;
 
     // register the SIGINT signal
-    signal(SIGINT,signal_handler);
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    if(sigaction(SIGTSTP,&sa,NULL) == -1){
+      perror("sigaction");
+      exit(EXIT_FAILURE);
+    }
 
    while(1){
 
@@ -16,7 +30,11 @@ void scan_input(char* prompt,char *input_string){
      // clear the output buffer
      fflush(stdout);
      // scan the input till end of line
-     scanf("%[^\n]s",input_string);
+     if(scanf("%[^\n]s",input_string) == EOF){
+      clearerr(stdin);
+      memset(input_string,'\0',25);
+      continue;
+     };
      // clear the input buffer
      getchar();
 
@@ -33,6 +51,8 @@ void scan_input(char* prompt,char *input_string){
     // check the command: if it's internal or external
     command_type = check_command_type(command);
     //printf("The command type is %d\n",command_type);
+
+    signal(SIGTSTP, SIG_DFL);
     if(command_type == EXTERNAL){
       // create a child process
       pid = fork();
@@ -42,7 +62,10 @@ void scan_input(char* prompt,char *input_string){
       }
       else if(pid == 0){
          //child 
+         if(setpgid(0,0) == -1) perror("setpgid");
          signal(SIGINT,SIG_DFL);
+         signal(SIGTSTP,SIG_DFL);
+
          ret_status = system(input_string);
          if(ret_status == 0) exit(0);
          else exit(1);
@@ -50,9 +73,16 @@ void scan_input(char* prompt,char *input_string){
       }
       else {
          // parent 
-         wait(&status);
-         if(WIFEXITED(status)) printf("child with pid: %d terminated normally\n",pid); 
+         if(setpgid(pid,pid) == -1) perror("setpgid");
+         if(tcsetpgrp(STDIN_FILENO,pid) == -1) perror("tcsetpgrp");
+         signal(SIGTSTP,SIG_IGN);
+         if(waitpid(pid,&status,WUNTRACED) == -1) perror("waitpid");
+         if(WIFSTOPPED(status)) printf("child with pid %d stopped by signal %d\n",pid,WSTOPSIG(status));
+         else if(WIFEXITED(status)) printf("child with pid: %d terminated normally\n",pid); 
          else if(WIFSIGNALED(status)) printf("child with pid %d terminated by a signal no. %d\n",pid,WTERMSIG(status));
+         if(tcsetpgrp(STDIN_FILENO,getpgrp()) == -1) perror("tcsetpgrp");
+         pid = 0;
+         
       }
       // clear the input string for next iteration 
       memset(input_string,'\0',25);
