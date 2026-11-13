@@ -1,5 +1,7 @@
 #include"main.h"
 
+job_t *Jobs = NULL;
+volatile sig_atomic_t child_event = 0;
 pid_t pid;
 void scan_input(char* prompt,char *input_string){
    char *command;
@@ -7,8 +9,8 @@ void scan_input(char* prompt,char *input_string){
    char *token;
    int argc = 0;
    int command_type,status = 0;
-
-    // register the SIGINT signal
+   int next_job_id = 1;
+    // register the required signals
     struct sigaction sa;
 
     memset(&sa, 0, sizeof(sa));
@@ -24,8 +26,44 @@ void scan_input(char* prompt,char *input_string){
       perror("sigaction");
       exit(EXIT_FAILURE);
     }
+    if(sigaction(SIGCHLD,&sa,NULL) == -1){
+      perror("sigaction");
+      exit(EXIT_FAILURE);
+    }
 
    while(1){
+
+      if(child_event){
+         child_event = 0;
+         pid_t finished_pid;
+         while((finished_pid = waitpid(-1,&status,WNOHANG)) > 0){
+            job_t *current = Jobs;
+            job_t *previous = NULL;
+
+            while(current != NULL && current->pid != finished_pid){
+               previous = current;
+               current = current->next;
+            }
+            if(current == NULL) continue;
+            if(WIFEXITED(status)){
+               printf("[%d] %s exited with status %d\n",
+                           current->job_id,
+                           current->command,
+                           WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+               printf("[%d] %s terminated by signal %d\n",
+                           current->job_id,
+                           current->command,
+                           WTERMSIG(status));
+            }
+
+            if(previous == NULL) Jobs = current->next;
+            else previous->next=current->next;
+            free(current);
+            // printf("background process terminated\n");
+         }
+
+      }
 
     //display the prompt
      printf(ANSI_COLOR_RED "[%s]$" ANSI_COLOR_RESET,prompt);
@@ -60,8 +98,12 @@ void scan_input(char* prompt,char *input_string){
       signal(SIGTSTP, SIG_IGN);
       signal(SIGTTOU, SIG_IGN);
       signal(SIGTTIN, SIG_IGN);
-      // create a child process
 
+      // inspect incase '&' is used for background process !
+      int background = 0;
+      if(input_string[strlen(input_string)-1] == '&') background = 1;
+
+      // create a child process
       pid = fork();
       if(pid == -1){
          perror("fork");
@@ -81,21 +123,57 @@ void scan_input(char* prompt,char *input_string){
             token = strtok(NULL , " \t");
          }
          argv[argc] = NULL;
-         execvp(argv[0],argv);
-         perror("execvp");
-         _exit(EXIT_FAILURE);
+         if(argc > 0 && strcmp(argv[argc-1],"&") == 0){
+            argv[--argc] = NULL;
+         }
+            execvp(argv[0],argv);
+            perror("execvp");
+            _exit(EXIT_FAILURE);
+         
 
       }
       else {
          // parent 
+         
          if(setpgid(pid,pid) == -1) perror("setpgid");
-         if(tcsetpgrp(STDIN_FILENO,pid) == -1) perror("tcsetpgrp");
-         signal(SIGTSTP,SIG_IGN);
-         if(waitpid(pid,&status,WUNTRACED) == -1) perror("waitpid");
-         else if(WIFSTOPPED(status)) printf("\nchild with pid %d stopped by signal %d\n",pid,WSTOPSIG(status));
-         else if(WIFEXITED(status)) printf("child with pid: %d terminated normally\n",pid); 
-         else if(WIFSIGNALED(status)) printf("child with pid %d terminated by a signal no. %d\n",pid,WTERMSIG(status));
-         if(tcsetpgrp(STDIN_FILENO,getpgrp()) == -1) perror("tcsetpgrp");
+         if(background){
+            // background process initiated
+            job_t *new_job = malloc(sizeof(*new_job));
+            new_job->job_id = next_job_id++;
+            new_job->state = RUNNING;
+            new_job->pid = pid;
+            new_job->pgid = pid;
+
+            strncpy(new_job->command, input_string,sizeof(new_job->command)-1);
+
+            new_job->command[sizeof(new_job->command)-1] = '\0';
+            new_job->next = Jobs;
+            Jobs = new_job;
+            printf("started background process %d\n",pid);
+         }
+         else {
+            if(tcsetpgrp(STDIN_FILENO,pid) == -1) perror("tcsetpgrp");
+            signal(SIGTSTP,SIG_IGN);
+            if(waitpid(pid,&status,WUNTRACED) == -1) perror("waitpid");
+            else if(WIFSTOPPED(status)){
+               job_t *new_job = malloc(sizeof(*new_job));
+               new_job->job_id = next_job_id++;
+               new_job->state = STOPPED;
+               new_job->pid = pid;
+               new_job->pgid = pid;
+
+               strncpy(new_job->command, input_string,sizeof(new_job->command)-1);
+
+               new_job->command[sizeof(new_job->command)-1] = '\0';
+               new_job->next = Jobs;
+               Jobs = new_job;
+               printf("\nchild with pid %d stopped by signal %d\n",pid,WSTOPSIG(status));
+               }
+            else if(WIFEXITED(status)) printf("child with pid: %d terminated normally\n",pid); 
+            else if(WIFSIGNALED(status)) printf("child with pid %d terminated by a signal no. %d\n",pid,WTERMSIG(status));
+            if(tcsetpgrp(STDIN_FILENO,getpgrp()) == -1) perror("tcsetpgrp");
+         }
+
          if(sigaction(SIGTSTP,&sa,NULL) == -1) perror("sigaction");
          pid = 0;
          
@@ -112,9 +190,4 @@ void scan_input(char* prompt,char *input_string){
     // clear the input string for next iteration 
       memset(input_string,'\0',25);
    }
-
-
 }
-    
-   
-   
