@@ -3,7 +3,8 @@
 int check_command_type(char *command){
     char *built_ins[] = {"echo", "printf", "read", "cd", "pwd", "pushd", "popd", "dirs", "let", "eval",
 						"set", "unset", "export", "declare", "typeset", "readonly", "getopts", "source",
-						"exit", "exec", "shopt", "caller", "true", "type", "hash", "bind", "help", "jobs", "bg", NULL};
+						"exit", "exec", "shopt", "caller", "true", "type", "hash", "bind", "help", "jobs", "bg", 
+						"fg" ,NULL};
     
 
 	if(strcmp(command,"\0") == 0) return NO_COMMAND;

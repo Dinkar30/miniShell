@@ -2,13 +2,14 @@
 
 job_t *Jobs = NULL;
 volatile sig_atomic_t child_event = 0;
+int status = 0;
 pid_t pid;
 void scan_input(char* prompt,char *input_string){
    char *command;
    char *argv[25];
    char *token;
    int argc = 0;
-   int command_type,status = 0;
+   int command_type;
    int next_job_id = 1;
     // register the required signals
     struct sigaction sa;
@@ -170,7 +171,7 @@ void scan_input(char* prompt,char *input_string){
                printf("\nchild with pid %d stopped by signal %d\n",pid,WSTOPSIG(status));
                }
             else if(WIFEXITED(status)) printf("child with pid: %d terminated normally\n",pid); 
-            else if(WIFSIGNALED(status)) printf("child with pid %d terminated by a signal no. %d\n",pid,WTERMSIG(status));
+            else if(WIFSIGNALED(status)) printf("child with pid %d terminated by signal no. %d\n",pid,WTERMSIG(status));
             if(tcsetpgrp(STDIN_FILENO,getpgrp()) == -1) perror("tcsetpgrp");
          }
 
