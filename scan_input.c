@@ -88,6 +88,15 @@ void scan_input(char* prompt,char *input_string){
             continue;
         }
      }
+    if(strchr(input_string, '|') != NULL){
+      signal(SIGTSTP, SIG_IGN);
+      signal(SIGTTOU, SIG_IGN);
+      signal(SIGTTIN, SIG_IGN);
+      execute_pipeline(input_string);
+      sigaction(SIGTSTP, &sa, NULL);
+      memset(input_string,'\0',25);
+      continue;
+    }
     command = get_command(input_string);
     // check the command: if it's internal or external
     command_type = check_command_type(command);

@@ -16,4 +16,5 @@ int check_command_type(char *command){
 	for(int i=0;external_commands[i]!= NULL;i++){
 		if(strcmp(command,external_commands[i]) == 0) return EXTERNAL;
 	}
+	return NO_COMMAND;
 }

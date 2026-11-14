@@ -47,6 +47,7 @@ void copy_change(char *prompt, char *input_string);
 int check_command_type(char *command);
 void echo(char *input_string, int status);
 void execute_internal_commands(char *input_string);
+int execute_pipeline(char *input_string);
 void signal_handler(int sig_num);
 void extract_external_commands(char **external_commands);
 
